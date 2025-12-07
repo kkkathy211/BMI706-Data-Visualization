@@ -284,7 +284,7 @@ cm_y_var = st.selectbox(
     index=METABOLIC_COLS.index("BMI") if "BMI" in METABOLIC_COLS else 0,
 )
 
-# 箱线图 + jitter 点
+# boxplot：color gradient indicates # of cormobidity
 box = (
     alt.Chart(filtered)
     .mark_boxplot()
@@ -292,23 +292,33 @@ box = (
         x=alt.X("Comorbidity_Count:O",
                 title="Number of comorbid conditions"),
         y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
-        color=alt.Color("Comorbidity_Count:O", legend=None),
+        color=alt.Color(
+            "Comorbidity_Count:Q",
+            scale=alt.Scale(scheme="blues"),
+            legend=alt.Legend(title="Number of comorbid conditions")
+        ),
         tooltip=["Comorbidity_Count:O", cm_y_var]
     )
     .properties(height=350)
 )
 
+# add jitter points
 points = (
     alt.Chart(filtered)
     .mark_circle(size=20, opacity=0.3)
     .encode(
         x=alt.X("Comorbidity_Count:O"),
         y=alt.Y(cm_y_var),
-        color=alt.Color("Comorbidity_Count:O", legend=None),
+        color=alt.Color(
+            "Comorbidity_Count:Q",
+            scale=alt.Scale(scheme="blues"),
+            legend=None
+        ),
     )
 )
 
 st.altair_chart(box + points, use_container_width=True)
+
 
 
 # 3. Comorbidity prevalence by lifestyle level
@@ -323,45 +333,41 @@ life_var = st.selectbox(
       if "Physical_Activity_Equivalent_Min" in LIFESTYLE_COLS else 0,
 )
 
-# 用分位数把生活方式变量切成 3 组：Low / Medium / High
-q = filtered[life_var].quantile([0, 1/3, 2/3, 1]).to_list()
-labels = ["Low", "Medium", "High"]
+# factor Any_Comorbidity into 0/1
+tmp = filtered.copy()
+tmp["Any_Comorbidity_Num"] = (tmp["Any_Comorbidity"] == "Yes").astype(int)
 
-filtered_life = filtered.copy()
-filtered_life["Lifestyle_Group"] = pd.cut(
-    filtered_life[life_var],
-    bins=q,
-    labels=labels,
-    include_lowest=True,
-    duplicates="drop"
-)
-
-# 计算每组的任意共病患病率
-group_prev = (
-    filtered_life
-    .groupby("Lifestyle_Group", dropna=True)
-    .apply(lambda d: (d["Any_Comorbidity"] == "Yes").mean())
-    .reset_index(name="Prevalence")
-)
-
-prev_bar = (
-    alt.Chart(group_prev)
-    .mark_bar()
+# boxplot
+prev_chart = (
+    alt.Chart(tmp)
+    .transform_bin(
+        "life_bin", field=life_var, maxbins=15 
+    )
+    .transform_aggregate(
+        prevalence="mean(Any_Comorbidity_Num)",
+        groupby=["life_bin"]
+    )
+    .mark_line(point=True)
     .encode(
-        x=alt.X("Lifestyle_Group:N",
-                title=f"{nice_label(life_var)} level"),
-        y=alt.Y("Prevalence:Q",
-                title="Any comorbidity prevalence",
-                axis=alt.Axis(format=".0%")),
+        x=alt.X(
+            "life_bin:Q",
+            title=nice_label(life_var)
+        ),
+        y=alt.Y(
+            "prevalence:Q",
+            title="Any comorbidity prevalence",
+            axis=alt.Axis(format=".0%")
+        ),
         tooltip=[
-            alt.Tooltip("Lifestyle_Group:N", title="Group"),
-            alt.Tooltip("Prevalence:Q", format=".1%", title="Prevalence"),
+            alt.Tooltip("life_bin:Q", title=nice_label(life_var)),
+            alt.Tooltip("prevalence:Q", format=".1%", title="Prevalence"),
         ]
     )
     .properties(height=300)
 )
 
-st.altair_chart(prev_bar, use_container_width=True)
+st.altair_chart(prev_chart, use_container_width=True)
+
 
 
 
