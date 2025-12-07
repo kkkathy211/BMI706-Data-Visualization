@@ -267,7 +267,7 @@ prev_chart = (
 st.altair_chart(prev_chart, use_container_width=True)
 
 
-# -----------------------------
+## -----------------------------
 # 2. Metabolic markers across comorbidity levels
 # -----------------------------
 
@@ -280,48 +280,57 @@ cm_y_var = st.selectbox(
     index=METABOLIC_COLS.index("BMI") if "BMI" in METABOLIC_COLS else 0,
 )
 
-# Base boxplot (no facet yet)
-box = (
-    alt.Chart()
-    .mark_boxplot()
-    .encode(
-        x=alt.X("Comorbidity_Count:O",
-                title="Number of comorbid conditions"),
-        y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
-        color=alt.Color(
-            "Comorbidity_Count:Q",
-            scale=alt.Scale(scheme="blues"),
-            legend=alt.Legend(title="Number of comorbidity")
-        ),
-        tooltip=["Comorbidity_Count:O", cm_y_var]
-    )
+genders_in_data = (
+    filtered["Gender"]
+    .dropna()
+    .astype(str)
+    .unique()
 )
 
-# Jittered points (no facet yet)
-points = (
-    alt.Chart()
-    .mark_circle(size=20, opacity=0.3)
-    .encode(
-        x=alt.X("Comorbidity_Count:O"),
-        y=alt.Y(cm_y_var),
-        color=alt.Color(
-            "Comorbidity_Count:Q",
-            scale=alt.Scale(scheme="blues"),
-            legend=None
-        ),
-    )
-)
+gender_charts = []
 
-# Layer box + points, then facet by gender outside
-metab_chart = (
-    alt.layer(box, points, data=filtered)
-    .facet(
-        column=alt.Column("Gender:N", title="Gender")
-    )
-    .properties(height=350)
-)
+for g in sorted(genders_in_data):
+    df_g = filtered[filtered["Gender"] == g]
 
-st.altair_chart(metab_chart, use_container_width=True)
+    base = (
+        alt.Chart(df_g)
+        .encode(
+            x=alt.X(
+                "Comorbidity_Count:O",
+                title="Number of comorbid conditions"
+            ),
+            y=alt.Y(
+                cm_y_var,
+                title=nice_label(cm_y_var)
+            ),
+            color=alt.Color(
+                "Comorbidity_Count:Q",
+                scale=alt.Scale(scheme="blues"),
+                legend=alt.Legend(title="Number of comorbidity")
+            ),
+            tooltip=["Gender", "Comorbidity_Count:O", cm_y_var],
+        )
+    )
+
+    box = base.mark_boxplot()
+    points = base.mark_circle(size=20, opacity=0.3)
+
+    chart_g = (box + points).properties(
+        title=str(g),
+        height=350,
+    )
+
+    gender_charts.append(chart_g)
+
+if gender_charts:
+    # Put male & female panels side by side, share y-axis scale
+    metab_chart = alt.hconcat(*gender_charts).resolve_scale(
+        y="shared"
+    )
+    st.altair_chart(metab_chart, use_container_width=True)
+else:
+    st.info("No gender information available under current filters.")
+
 
 
 
