@@ -290,7 +290,7 @@ box = (
     .mark_boxplot()
     .encode(
         x=alt.X("Comorbidity_Count:O",
-                title="Number of comorbid conditions"),
+                title="Number of comorbidity"),
         y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
         color=alt.Color(
             "Comorbidity_Count:Q",
@@ -341,7 +341,9 @@ tmp["Any_Comorbidity_Num"] = (tmp["Any_Comorbidity"] == "Yes").astype(int)
 prev_chart = (
     alt.Chart(tmp)
     .transform_bin(
-        "life_bin", field=life_var, maxbins=15 
+        bin=alt.Bin(maxbins=15),   
+        field=life_var,            
+        as_="life_bin"             
     )
     .transform_aggregate(
         prevalence="mean(Any_Comorbidity_Num)",
