@@ -444,6 +444,7 @@ prev_chart = (
                 range=["#ff69b4", "#1f77b4"]
             ),
         ),
+        order=alt.Order("life_bin:Q", sort="ascending"),
         tooltip=[
             alt.Tooltip("Gender:N", title="Gender"),
             alt.Tooltip("life_bin:Q", title=nice_label(life_var)),
