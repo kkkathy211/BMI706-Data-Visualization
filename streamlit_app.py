@@ -277,6 +277,23 @@ st.altair_chart(prev_chart, use_container_width=True)
 
 st.subheader("Metabolic markers across comorbidity levels")
 
+# choose one disease
+disease_subset = st.selectbox(
+    "Subset participants by specific disease (optional)",
+    options=["All participants"] + OUTCOME_COLS,
+    format_func=lambda v: "All participants" if v == "All participants" else nice_label(v),
+)
+
+if disease_subset == "All participants":
+    data_metab = filtered.copy()
+    subset_label = "All participants"
+else:
+    # select only Yes 
+    data_metab = filtered[filtered[disease_subset].astype(str).str.upper() == "YES"].copy()
+    subset_label = f"{nice_label(disease_subset)} = Yes"
+
+st.caption(f"Currently showing: {subset_label} (n = {len(data_metab)})")
+
 cm_y_var = st.selectbox(
     "Metabolic variable (y-axis, by comorbidity count)",
     options=METABOLIC_COLS,
@@ -284,13 +301,13 @@ cm_y_var = st.selectbox(
     index=METABOLIC_COLS.index("BMI") if "BMI" in METABOLIC_COLS else 0,
 )
 
-# boxplot：color gradient indicates # of cormobidity
+# boxplot：color gradient indicates # of comorbidity
 box = (
-    alt.Chart(filtered)
+    alt.Chart(data_metab)
     .mark_boxplot()
     .encode(
         x=alt.X("Comorbidity_Count:O",
-                title="Number of comorbidity"),
+                title="Number of comorbid conditions"),
         y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
         color=alt.Color(
             "Comorbidity_Count:Q",
@@ -304,7 +321,7 @@ box = (
 
 # add jitter points
 points = (
-    alt.Chart(filtered)
+    alt.Chart(data_metab)
     .mark_circle(size=20, opacity=0.3)
     .encode(
         x=alt.X("Comorbidity_Count:O"),
@@ -321,9 +338,9 @@ st.altair_chart(box + points, use_container_width=True)
 
 
 
-# 3. Comorbidity prevalence by lifestyle level
+# 3. Comorbidity / disease prevalence by lifestyle level
 
-st.subheader("Comorbidity prevalence by lifestyle level")
+st.subheader("Comorbidity / disease prevalence by lifestyle level")
 
 life_var = st.selectbox(
     "Lifestyle variable to group by",
@@ -333,20 +350,32 @@ life_var = st.selectbox(
       if "Physical_Activity_Equivalent_Min" in LIFESTYLE_COLS else 0,
 )
 
-# factor Any_Comorbidity into 0/1
-tmp = filtered.copy()
-tmp["Any_Comorbidity_Num"] = (tmp["Any_Comorbidity"] == "Yes").astype(int)
+# choose one disease
+outcome_prev = st.selectbox(
+    "Outcome whose prevalence to plot",
+    options=["Any_Comorbidity"] + OUTCOME_COLS,
+    format_func=lambda v: "Any comorbidity (≥1)" if v == "Any_Comorbidity" else nice_label(v),
+)
 
-# boxplot
+tmp = filtered.copy()
+
+if outcome_prev == "Any_Comorbidity":
+    tmp["Outcome_Num"] = (tmp["Any_Comorbidity"] == "Yes").astype(int)
+    outcome_title = "Any comorbidity prevalence"
+else:
+    # Yes / No → 0 / 1
+    tmp["Outcome_Num"] = (tmp[outcome_prev].astype(str).str.upper() == "YES").astype(int)
+    outcome_title = f"{nice_label(outcome_prev)} prevalence"
+
 prev_chart = (
     alt.Chart(tmp)
     .transform_bin(
-        bin=alt.Bin(maxbins=15),   
-        field=life_var,            
-        as_="life_bin"             
+        bin=alt.Bin(maxbins=15),
+        field=life_var,
+        as_="life_bin"
     )
     .transform_aggregate(
-        prevalence="mean(Any_Comorbidity_Num)",
+        prevalence="mean(Outcome_Num)",
         groupby=["life_bin"]
     )
     .mark_line(point=True)
@@ -357,7 +386,7 @@ prev_chart = (
         ),
         y=alt.Y(
             "prevalence:Q",
-            title="Any comorbidity prevalence",
+            title=outcome_title,
             axis=alt.Axis(format=".0%")
         ),
         tooltip=[
@@ -369,27 +398,3 @@ prev_chart = (
 )
 
 st.altair_chart(prev_chart, use_container_width=True)
-
-
-
-
-# 4. Correlation heatmap (metabolic block)
-
-st.subheader("Correlation of metabolic measures (current filters)")
-
-corr_df = filtered[METABOLIC_COLS].corr().stack().reset_index()
-corr_df.columns = ["Var1", "Var2", "Correlation"]
-
-heatmap = (
-    alt.Chart(corr_df)
-    .mark_rect()
-    .encode(
-        x=alt.X("Var1:N", title="", sort=METABOLIC_COLS),
-        y=alt.Y("Var2:N", title="", sort=METABOLIC_COLS),
-        color=alt.Color("Correlation:Q", scale=alt.Scale(scheme="redblue"), title="r"),
-        tooltip=["Var1", "Var2", alt.Tooltip("Correlation:Q", format=".2f")],
-    )
-    .properties(height=400)
-)
-
-st.altair_chart(heatmap, use_container_width=True)
