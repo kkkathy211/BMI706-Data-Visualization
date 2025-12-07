@@ -277,23 +277,6 @@ st.altair_chart(prev_chart, use_container_width=True)
 
 st.subheader("Metabolic markers across comorbidity levels")
 
-# choose one disease
-disease_subset = st.selectbox(
-    "Subset participants by specific disease (optional)",
-    options=["All participants"] + OUTCOME_COLS,
-    format_func=lambda v: "All participants" if v == "All participants" else nice_label(v),
-)
-
-if disease_subset == "All participants":
-    data_metab = filtered.copy()
-    subset_label = "All participants"
-else:
-    # select only Yes 
-    data_metab = filtered[filtered[disease_subset].astype(str).str.upper() == "YES"].copy()
-    subset_label = f"{nice_label(disease_subset)} = Yes"
-
-st.caption(f"Currently showing: {subset_label} (n = {len(data_metab)})")
-
 cm_y_var = st.selectbox(
     "Metabolic variable (y-axis, by comorbidity count)",
     options=METABOLIC_COLS,
@@ -301,9 +284,9 @@ cm_y_var = st.selectbox(
     index=METABOLIC_COLS.index("BMI") if "BMI" in METABOLIC_COLS else 0,
 )
 
-# boxplot：color gradient indicates # of comorbidity
+# boxplot
 box = (
-    alt.Chart(data_metab)
+    alt.Chart(filtered)
     .mark_boxplot()
     .encode(
         x=alt.X("Comorbidity_Count:O",
@@ -312,7 +295,7 @@ box = (
         color=alt.Color(
             "Comorbidity_Count:Q",
             scale=alt.Scale(scheme="blues"),
-            legend=alt.Legend(title="Number of comorbid conditions")
+            legend=alt.Legend(title="Number of comorbidity")
         ),
         tooltip=["Comorbidity_Count:O", cm_y_var]
     )
@@ -321,7 +304,7 @@ box = (
 
 # add jitter points
 points = (
-    alt.Chart(data_metab)
+    alt.Chart(filtered)
     .mark_circle(size=20, opacity=0.3)
     .encode(
         x=alt.X("Comorbidity_Count:O"),
@@ -335,6 +318,69 @@ points = (
 )
 
 st.altair_chart(box + points, use_container_width=True)
+
+
+# --- Additional view: restrict to one or more selected outcomes ---
+
+st.markdown("#### Metabolic markers among selected disease groups")
+
+selected_outcomes = st.multiselect(
+    "Select one or more conditions to focus on",
+    options=OUTCOME_COLS,
+    format_func=nice_label,
+)
+
+if selected_outcomes:
+    # Keep participants who have ANY of the selected conditions = "Yes"
+    mask = np.zeros(len(filtered), dtype=bool)
+    for col in selected_outcomes:
+        mask |= filtered[col].astype(str).str.upper().eq("YES")
+
+    subset_df = filtered[mask].copy()
+
+    if subset_df.empty:
+        st.warning("No participants have any of the selected conditions under the current filters.")
+    else:
+        label_list = ", ".join(nice_label(o) for o in selected_outcomes)
+        st.caption(
+            f"Showing participants with ≥1 of the selected conditions: {label_list} "
+            f"(n = {len(subset_df)})"
+        )
+
+        box_sub = (
+            alt.Chart(subset_df)
+            .mark_boxplot()
+            .encode(
+                x=alt.X("Comorbidity_Count:O",
+                        title="Number of comorbid conditions"),
+                y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
+                color=alt.Color(
+                    "Comorbidity_Count:Q",
+                    scale=alt.Scale(scheme="blues"),
+                    legend=alt.Legend(title="Number of comorbidity")
+                ),
+                tooltip=["Comorbidity_Count:O", cm_y_var]
+            )
+            .properties(height=350)
+        )
+
+        points_sub = (
+            alt.Chart(subset_df)
+            .mark_circle(size=20, opacity=0.3)
+            .encode(
+                x=alt.X("Comorbidity_Count:O"),
+                y=alt.Y(cm_y_var),
+                color=alt.Color(
+                    "Comorbidity_Count:Q",
+                    scale=alt.Scale(scheme="blues"),
+                    legend=None
+                ),
+            )
+        )
+
+        st.altair_chart(box_sub + points_sub, use_container_width=True)
+else:
+    st.caption("Select one or more conditions above to see a focused view.")
 
 
 
