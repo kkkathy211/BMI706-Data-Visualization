@@ -287,49 +287,38 @@ genders_in_data = (
     .unique()
 )
 
-gender_charts = []
-
-for g in sorted(genders_in_data):
-    df_g = filtered[filtered["Gender"] == g]
-
-    base = (
-        alt.Chart(df_g)
-        .encode(
-            x=alt.X(
-                "Comorbidity_Count:O",
-                title="Number of comorbid conditions"
+# Single plot: boxes + points, grouped and colored by gender
+base = (
+    alt.Chart(filtered)
+    .encode(
+        x=alt.X(
+            "Comorbidity_Count:O",
+            title="Number of comorbid conditions"
+        ),
+        # horizontally dodge male/female within each count
+        xOffset=alt.XOffset("Gender:N"),
+        y=alt.Y(
+            cm_y_var,
+            title=nice_label(cm_y_var)
+        ),
+        color=alt.Color(
+            "Gender:N",
+            title="Gender",
+            scale=alt.Scale(
+                domain=["Female", "Male"],           # adjust if your labels differ
+                range=["#ff69b4", "#1f77b4"]         # pink for female, blue for male
             ),
-            y=alt.Y(
-                cm_y_var,
-                title=nice_label(cm_y_var)
-            ),
-            color=alt.Color(
-                "Comorbidity_Count:Q",
-                scale=alt.Scale(scheme="blues"),
-                legend=alt.Legend(title="Number of comorbidity")
-            ),
-            tooltip=["Gender", "Comorbidity_Count:O", cm_y_var],
-        )
+        ),
+        tooltip=["Gender", "Comorbidity_Count:O", cm_y_var],
     )
+)
 
-    box = base.mark_boxplot()
-    points = base.mark_circle(size=20, opacity=0.3)
+box = base.mark_boxplot()
+points = base.mark_circle(size=20, opacity=0.3)
 
-    chart_g = (box + points).properties(
-        title=str(g),
-        height=350,
-    )
+metab_chart = (box + points).properties(height=350)
 
-    gender_charts.append(chart_g)
-
-if gender_charts:
-    # Put male & female panels side by side, share y-axis scale
-    metab_chart = alt.hconcat(*gender_charts).resolve_scale(
-        y="shared"
-    )
-    st.altair_chart(metab_chart, use_container_width=True)
-else:
-    st.info("No gender information available under current filters.")
+st.altair_chart(metab_chart, use_container_width=True)
 
 
 
@@ -372,13 +361,22 @@ if selected_outcomes:
                 .mark_boxplot()
                 .encode(
                     x=alt.X("Condition:N", title="Condition"),
+                    # dodge male/female within each condition
+                    xOffset=alt.XOffset("Gender:N"),
                     y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
-                    color=alt.Color("Condition:N", legend=alt.Legend(title="Condition")),
-                    column=alt.Column("Gender:N", title="Gender"),
+                    color=alt.Color(
+                        "Gender:N",
+                        title="Gender",
+                        scale=alt.Scale(
+                            domain=["Female", "Male"],
+                            range=["#ff69b4", "#1f77b4"]
+                        ),
+                    ),
                     tooltip=["Gender:N", "Condition:N", cm_y_var]
                 )
                 .properties(height=350)
             )
+
 
             st.altair_chart(cond_box, use_container_width=True)
     else:
@@ -438,7 +436,14 @@ prev_chart = (
             title=outcome_title,
             axis=alt.Axis(format=".0%")
         ),
-        color=alt.Color("Gender:N", title="Gender"),
+        color=alt.Color(
+            "Gender:N",
+            title="Gender",
+            scale=alt.Scale(
+                domain=["Female", "Male"],
+                range=["#ff69b4", "#1f77b4"]
+            ),
+        ),
         tooltip=[
             alt.Tooltip("Gender:N", title="Gender"),
             alt.Tooltip("life_bin:Q", title=nice_label(life_var)),
