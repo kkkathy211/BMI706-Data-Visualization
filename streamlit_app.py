@@ -273,79 +273,99 @@ st.altair_chart(prev_chart, use_container_width=True)
 
 
 
-# 2. Lifestyle vs metabolic scatter + linked comorbidity bars
+# 2. Metabolic markers across comorbidity levels
 
-st.subheader("Lifestyle patterns, metabolic markers, and comorbidity")
+st.subheader("Metabolic markers across comorbidity levels")
 
-left, right = st.columns([2, 1])
-
-with left:
-    x_var = st.selectbox(
-        "Lifestyle variable (x-axis)",
-        options=LIFESTYLE_COLS,
-        format_func=nice_label,
-        index=0,
-    )
-    y_var = st.selectbox(
-        "Metabolic variable (y-axis)",
-        options=METABOLIC_COLS,
-        format_func=nice_label,
-        index=METABOLIC_COLS.index("BMI") if "BMI" in METABOLIC_COLS else 0,
-    )
-
-with right:
-    color_outcome = st.selectbox(
-        "Color points by",
-        options=["Any_Comorbidity"] + OUTCOME_COLS,
-        format_func=lambda v: "Any comorbidity (≥1)" if v == "Any_Comorbidity" else nice_label(v),
-    )
-
-# Build scatter with a brush selection
-brush = alt.selection_interval()
-
-scatter = (
-    alt.Chart(filtered)
-    .mark_circle(size=60, opacity=0.7)
-    .encode(
-        x=alt.X(x_var, title=nice_label(x_var)),
-        y=alt.Y(y_var, title=nice_label(y_var)),
-        color=alt.Color(
-            color_outcome + ":N",
-            title=nice_label(color_outcome) if color_outcome != "Any_Comorbidity" else "Any comorbidity",
-        ),
-        tooltip=[
-            "ID",
-            x_var,
-            y_var,
-            color_outcome,
-            "Comorbidity_Count",
-        ],
-    )
-    .add_selection(brush)
-    .properties(height=400)
+cm_y_var = st.selectbox(
+    "Metabolic variable (y-axis, by comorbidity count)",
+    options=METABOLIC_COLS,
+    format_func=nice_label,
+    index=METABOLIC_COLS.index("BMI") if "BMI" in METABOLIC_COLS else 0,
 )
 
-# Bar chart: distribution of comorbidity count for brushed points
-bars = (
+# 箱线图 + jitter 点
+box = (
     alt.Chart(filtered)
-    .transform_filter(brush)
+    .mark_boxplot()
+    .encode(
+        x=alt.X("Comorbidity_Count:O",
+                title="Number of comorbid conditions"),
+        y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
+        color=alt.Color("Comorbidity_Count:O", legend=None),
+        tooltip=["Comorbidity_Count:O", cm_y_var]
+    )
+    .properties(height=350)
+)
+
+points = (
+    alt.Chart(filtered)
+    .mark_circle(size=20, opacity=0.3)
+    .encode(
+        x=alt.X("Comorbidity_Count:O"),
+        y=alt.Y(cm_y_var),
+        color=alt.Color("Comorbidity_Count:O", legend=None),
+    )
+)
+
+st.altair_chart(box + points, use_container_width=True)
+
+
+# 3. Comorbidity prevalence by lifestyle level
+
+st.subheader("Comorbidity prevalence by lifestyle level")
+
+life_var = st.selectbox(
+    "Lifestyle variable to group by",
+    options=LIFESTYLE_COLS,
+    format_func=nice_label,
+    index=LIFESTYLE_COLS.index("Physical_Activity_Equivalent_Min")
+      if "Physical_Activity_Equivalent_Min" in LIFESTYLE_COLS else 0,
+)
+
+# 用分位数把生活方式变量切成 3 组：Low / Medium / High
+q = filtered[life_var].quantile([0, 1/3, 2/3, 1]).to_list()
+labels = ["Low", "Medium", "High"]
+
+filtered_life = filtered.copy()
+filtered_life["Lifestyle_Group"] = pd.cut(
+    filtered_life[life_var],
+    bins=q,
+    labels=labels,
+    include_lowest=True,
+    duplicates="drop"
+)
+
+# 计算每组的任意共病患病率
+group_prev = (
+    filtered_life
+    .groupby("Lifestyle_Group", dropna=True)
+    .apply(lambda d: (d["Any_Comorbidity"] == "Yes").mean())
+    .reset_index(name="Prevalence")
+)
+
+prev_bar = (
+    alt.Chart(group_prev)
     .mark_bar()
     .encode(
-        x=alt.X("Comorbidity_Count:O", title="Number of comorbid conditions"),
-        y=alt.Y("count():Q", title="Count of participants"),
-        color=alt.Color("Comorbidity_Count:O", legend=None),
-        tooltip=["Comorbidity_Count:O", "count():Q"],
+        x=alt.X("Lifestyle_Group:N",
+                title=f"{nice_label(life_var)} level"),
+        y=alt.Y("Prevalence:Q",
+                title="Any comorbidity prevalence",
+                axis=alt.Axis(format=".0%")),
+        tooltip=[
+            alt.Tooltip("Lifestyle_Group:N", title="Group"),
+            alt.Tooltip("Prevalence:Q", format=".1%", title="Prevalence"),
+        ]
     )
-    .properties(height=200)
+    .properties(height=300)
 )
 
-combined = scatter & bars
-
-st.altair_chart(combined, use_container_width=True)
+st.altair_chart(prev_bar, use_container_width=True)
 
 
 
-# 3. Correlation heatmap (metabolic block)
+# 4. Correlation heatmap (metabolic block)
 
 st.subheader("Correlation of metabolic measures (current filters)")
 
