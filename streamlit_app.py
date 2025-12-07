@@ -320,67 +320,59 @@ points = (
 st.altair_chart(box + points, use_container_width=True)
 
 
-# --- Additional view: restrict to one or more selected outcomes ---
+# --- Additional view: compare metabolic marker across selected diseases ---
 
-st.markdown("#### Metabolic markers among selected disease groups")
+st.markdown("#### Metabolic marker levels in selected disease groups")
 
 selected_outcomes = st.multiselect(
-    "Select one or more conditions to focus on",
+    "Select one or more conditions to compare",
     options=OUTCOME_COLS,
     format_func=nice_label,
 )
 
 if selected_outcomes:
-    # Keep participants who have ANY of the selected conditions = "Yes"
-    mask = np.zeros(len(filtered), dtype=bool)
-    for col in selected_outcomes:
-        mask |= filtered[col].astype(str).str.upper().eq("YES")
+    # Build a long-format dataframe: one row per person-condition pair
+    long_frames = []
+    for cond in selected_outcomes:
+        # keep only participants with this condition = Yes
+        tmp = filtered[
+            filtered[cond].astype(str).str.upper() == "YES"
+        ][[cm_y_var]].copy()
+        tmp["Condition"] = nice_label(cond)
+        long_frames.append(tmp)
 
-    subset_df = filtered[mask].copy()
+    if long_frames:
+        subset_long = pd.concat(long_frames, ignore_index=True)
 
-    if subset_df.empty:
-        st.warning("No participants have any of the selected conditions under the current filters.")
+        if subset_long.empty:
+            st.warning("No participants have any of the selected conditions under the current filters.")
+        else:
+            # Optional: show sample sizes per condition
+            counts = subset_long["Condition"].value_counts().to_dict()
+            count_str = "; ".join([f"{k}: n={v}" for k, v in counts.items()])
+            st.caption(f"Number of participants per condition (showing those with the condition): {count_str}")
+
+            cond_box = (
+                alt.Chart(subset_long)
+                .mark_boxplot()
+                .encode(
+                    x=alt.X("Condition:N", title="Condition"),
+                    y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
+                    color=alt.Color(
+                        "Condition:N",
+                        legend=alt.Legend(title="Condition")
+                    ),
+                    tooltip=["Condition:N", cm_y_var]
+                )
+                .properties(height=350)
+            )
+
+            st.altair_chart(cond_box, use_container_width=True)
     else:
-        label_list = ", ".join(nice_label(o) for o in selected_outcomes)
-        st.caption(
-            f"Showing participants with ≥1 of the selected conditions: {label_list} "
-            f"(n = {len(subset_df)})"
-        )
-
-        box_sub = (
-            alt.Chart(subset_df)
-            .mark_boxplot()
-            .encode(
-                x=alt.X("Comorbidity_Count:O",
-                        title="Number of comorbid conditions"),
-                y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
-                color=alt.Color(
-                    "Comorbidity_Count:Q",
-                    scale=alt.Scale(scheme="blues"),
-                    legend=alt.Legend(title="Number of comorbidity")
-                ),
-                tooltip=["Comorbidity_Count:O", cm_y_var]
-            )
-            .properties(height=350)
-        )
-
-        points_sub = (
-            alt.Chart(subset_df)
-            .mark_circle(size=20, opacity=0.3)
-            .encode(
-                x=alt.X("Comorbidity_Count:O"),
-                y=alt.Y(cm_y_var),
-                color=alt.Color(
-                    "Comorbidity_Count:Q",
-                    scale=alt.Scale(scheme="blues"),
-                    legend=None
-                ),
-            )
-        )
-
-        st.altair_chart(box_sub + points_sub, use_container_width=True)
+        st.warning("No data available for the selected conditions.")
 else:
-    st.caption("Select one or more conditions above to see a focused view.")
+    st.caption("Select one or more conditions above to compare their metabolic marker distributions.")
+
 
 
 
