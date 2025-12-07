@@ -1,11 +1,12 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
 
 
+# -----------------------------
 # Config
+# -----------------------------
 st.set_page_config(
     page_title="Lifestyle & Comorbidity Dashboard",
     layout="wide"
@@ -60,10 +61,13 @@ DEMOGRAPHIC_COLS = [
     "Income_to_Poverty_Ratio",
 ]
 
-# def
 
+# -----------------------------
+# Helpers
+# -----------------------------
 def nice_label(name: str) -> str:
     return name.replace("_", " ")
+
 
 @st.cache_data
 def load_data(path: str) -> pd.DataFrame:
@@ -73,7 +77,7 @@ def load_data(path: str) -> pd.DataFrame:
     if "Unnamed: 0" in df.columns:
         df = df.drop(columns=["Unnamed: 0"])
 
-    # Outcome - "Yes"/"No"
+    # Ensure outcomes are strings
     for col in OUTCOME_COLS:
         df[col] = df[col].astype(str)
 
@@ -88,7 +92,7 @@ def load_data(path: str) -> pd.DataFrame:
 def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     st.sidebar.header("Filters")
 
-    # Demographics 
+    # -------- Demographics ----------
     st.sidebar.subheader("Demographics")
 
     # Age
@@ -99,14 +103,6 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         max_value=age_max,
         value=(age_min, age_max),
         step=1,
-    )
-
-    # Gender
-    genders = sorted(df["Gender"].dropna().unique())
-    selected_genders = st.sidebar.multiselect(
-        "Gender",
-        options=genders,
-        default=genders,
     )
 
     # Ethnicity
@@ -135,7 +131,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         step=0.1,
     )
 
-    # Lifestyle 
+    # -------- Lifestyle ----------
     st.sidebar.subheader("Lifestyle")
 
     # Cigarettes per day
@@ -158,7 +154,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         step=1,
     )
 
-    # Alcohol use frequency (numeric code; you can later map to labels)
+    # Alcohol use frequency
     a_min, a_max = int(df["Alcohol_Use_Frequency"].min()), int(df["Alcohol_Use_Frequency"].max())
     alcohol_range = st.sidebar.slider(
         "Alcohol use frequency (code)",
@@ -178,7 +174,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         step=10,
     )
 
-    # Build mask
+    # Build mask (no Gender filter here)
     mask = (
         df["Age"].between(age_range[0], age_range[1])
         & df["Income_to_Poverty_Ratio"].between(income_range[0], income_range[1])
@@ -188,8 +184,6 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         & df["Physical_Activity_Equivalent_Min"].between(pa_range[0], pa_range[1])
     )
 
-    if selected_genders:
-        mask &= df["Gender"].isin(selected_genders)
     if selected_ethnicities:
         mask &= df["Ethnicity"].isin(selected_ethnicities)
     if selected_edu:
@@ -210,8 +204,9 @@ def prevalence_table(df: pd.DataFrame) -> pd.DataFrame:
     return prev_df.sort_values("Prevalence (%)", ascending=False)
 
 
+# -----------------------------
 # Main app
-
+# -----------------------------
 df = load_data(DATA_PATH)
 
 st.title("Lifestyle & Comorbidity Explorer")
@@ -234,9 +229,9 @@ if filtered.empty:
     st.stop()
 
 
-
+# -----------------------------
 # 1. Disease prevalence summary
-
+# -----------------------------
 st.subheader("Comorbidity overview under current filters")
 
 col1, col2, col3 = st.columns(3)
@@ -272,9 +267,9 @@ prev_chart = (
 st.altair_chart(prev_chart, use_container_width=True)
 
 
-
+# -----------------------------
 # 2. Metabolic markers across comorbidity levels
-
+# -----------------------------
 st.subheader("Metabolic markers across comorbidity levels")
 
 cm_y_var = st.selectbox(
@@ -284,7 +279,7 @@ cm_y_var = st.selectbox(
     index=METABOLIC_COLS.index("BMI") if "BMI" in METABOLIC_COLS else 0,
 )
 
-# boxplot
+# Boxplot faceted by gender
 box = (
     alt.Chart(filtered)
     .mark_boxplot()
@@ -297,12 +292,13 @@ box = (
             scale=alt.Scale(scheme="blues"),
             legend=alt.Legend(title="Number of comorbidity")
         ),
-        tooltip=["Comorbidity_Count:O", cm_y_var]
+        column=alt.Column("Gender:N", title="Gender"),
+        tooltip=["Gender:N", "Comorbidity_Count:O", cm_y_var]
     )
     .properties(height=350)
 )
 
-# add jitter points
+# Jittered points in each gender panel
 points = (
     alt.Chart(filtered)
     .mark_circle(size=20, opacity=0.3)
@@ -314,6 +310,7 @@ points = (
             scale=alt.Scale(scheme="blues"),
             legend=None
         ),
+        column=alt.Column("Gender:N", title="Gender"),
     )
 )
 
@@ -321,7 +318,6 @@ st.altair_chart(box + points, use_container_width=True)
 
 
 # --- Additional view: compare metabolic marker across selected diseases ---
-
 st.markdown("#### Metabolic marker levels in selected disease groups")
 
 selected_outcomes = st.multiselect(
@@ -337,7 +333,7 @@ if selected_outcomes:
         # keep only participants with this condition = Yes
         tmp = filtered[
             filtered[cond].astype(str).str.upper() == "YES"
-        ][[cm_y_var]].copy()
+        ][[cm_y_var, "Gender"]].copy()
         tmp["Condition"] = nice_label(cond)
         long_frames.append(tmp)
 
@@ -347,9 +343,11 @@ if selected_outcomes:
         if subset_long.empty:
             st.warning("No participants have any of the selected conditions under the current filters.")
         else:
-            # Optional: show sample sizes per condition
-            counts = subset_long["Condition"].value_counts().to_dict()
-            count_str = "; ".join([f"{k}: n={v}" for k, v in counts.items()])
+            # Show sample sizes per condition
+            counts = subset_long.groupby(["Condition", "Gender"]).size().reset_index(name="n")
+            count_str = "; ".join(
+                [f"{row['Condition']} ({row['Gender']}): n={row['n']}" for _, row in counts.iterrows()]
+            )
             st.caption(f"Number of participants per condition (showing those with the condition): {count_str}")
 
             cond_box = (
@@ -358,11 +356,9 @@ if selected_outcomes:
                 .encode(
                     x=alt.X("Condition:N", title="Condition"),
                     y=alt.Y(cm_y_var, title=nice_label(cm_y_var)),
-                    color=alt.Color(
-                        "Condition:N",
-                        legend=alt.Legend(title="Condition")
-                    ),
-                    tooltip=["Condition:N", cm_y_var]
+                    color=alt.Color("Condition:N", legend=alt.Legend(title="Condition")),
+                    column=alt.Column("Gender:N", title="Gender"),
+                    tooltip=["Gender:N", "Condition:N", cm_y_var]
                 )
                 .properties(height=350)
             )
@@ -374,10 +370,9 @@ else:
     st.caption("Select one or more conditions above to compare their metabolic marker distributions.")
 
 
-
-
+# -----------------------------
 # 3. Comorbidity / disease prevalence by lifestyle level
-
+# -----------------------------
 st.subheader("Comorbidity / disease prevalence by lifestyle level")
 
 life_var = st.selectbox(
@@ -401,7 +396,6 @@ if outcome_prev == "Any_Comorbidity":
     tmp["Outcome_Num"] = (tmp["Any_Comorbidity"] == "Yes").astype(int)
     outcome_title = "Any comorbidity prevalence"
 else:
-    # Yes / No → 0 / 1
     tmp["Outcome_Num"] = (tmp[outcome_prev].astype(str).str.upper() == "YES").astype(int)
     outcome_title = f"{nice_label(outcome_prev)} prevalence"
 
@@ -414,7 +408,7 @@ prev_chart = (
     )
     .transform_aggregate(
         prevalence="mean(Outcome_Num)",
-        groupby=["life_bin"]
+        groupby=["life_bin", "Gender"]
     )
     .mark_line(point=True)
     .encode(
@@ -427,7 +421,9 @@ prev_chart = (
             title=outcome_title,
             axis=alt.Axis(format=".0%")
         ),
+        color=alt.Color("Gender:N", title="Gender"),
         tooltip=[
+            alt.Tooltip("Gender:N", title="Gender"),
             alt.Tooltip("life_bin:Q", title=nice_label(life_var)),
             alt.Tooltip("prevalence:Q", format=".1%", title="Prevalence"),
         ]
