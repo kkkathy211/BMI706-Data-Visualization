@@ -270,6 +270,7 @@ st.altair_chart(prev_chart, use_container_width=True)
 # -----------------------------
 # 2. Metabolic markers across comorbidity levels
 # -----------------------------
+
 st.subheader("Metabolic markers across comorbidity levels")
 
 cm_y_var = st.selectbox(
@@ -279,9 +280,9 @@ cm_y_var = st.selectbox(
     index=METABOLIC_COLS.index("BMI") if "BMI" in METABOLIC_COLS else 0,
 )
 
-# Boxplot faceted by gender
+# Base boxplot (no facet yet)
 box = (
-    alt.Chart(filtered)
+    alt.Chart()
     .mark_boxplot()
     .encode(
         x=alt.X("Comorbidity_Count:O",
@@ -292,15 +293,13 @@ box = (
             scale=alt.Scale(scheme="blues"),
             legend=alt.Legend(title="Number of comorbidity")
         ),
-        column=alt.Column("Gender:N", title="Gender"),
-        tooltip=["Gender:N", "Comorbidity_Count:O", cm_y_var]
+        tooltip=["Comorbidity_Count:O", cm_y_var]
     )
-    .properties(height=350)
 )
 
-# Jittered points in each gender panel
+# Jittered points (no facet yet)
 points = (
-    alt.Chart(filtered)
+    alt.Chart()
     .mark_circle(size=20, opacity=0.3)
     .encode(
         x=alt.X("Comorbidity_Count:O"),
@@ -310,11 +309,20 @@ points = (
             scale=alt.Scale(scheme="blues"),
             legend=None
         ),
-        column=alt.Column("Gender:N", title="Gender"),
     )
 )
 
-st.altair_chart(box + points, use_container_width=True)
+# Layer box + points, then facet by gender outside
+metab_chart = (
+    alt.layer(box, points, data=filtered)
+    .facet(
+        column=alt.Column("Gender:N", title="Gender")
+    )
+    .properties(height=350)
+)
+
+st.altair_chart(metab_chart, use_container_width=True)
+
 
 
 # --- Additional view: compare metabolic marker across selected diseases ---
